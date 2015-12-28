@@ -1,0 +1,235 @@
+program Fletcher;
+
+{$DEFINE SMART}
+{$i SRL/OSR.simba}
+{$I ../scripts/SRL-MiniInclude.simba}
+
+type
+  EItem = (Maple, doStringing, doFletching);
+  TItem = record
+    MiddleCol, Count, Tolerance: Int32;
+    BankText: TStringArray;
+  end;
+const
+  Name = '';
+  Pass = '';
+  LogToFletch = doStringing;
+  BowToString = Maple;
+  BankSlot = 7;
+
+var
+  Knife, Log, Bow: TItem;
+
+procedure LoadVars();
+begin
+  Knife := [7040117, 60, 20, ['']];
+  case LogToFletch of
+    Maple:
+      begin
+        Log := [607848, 85, 20, ['']];
+      end;
+  end;
+  case BowToString of
+    Maple:
+      begin
+        Bow := [65536, 133, 20, ['']];
+      end;
+
+  end;
+end;
+
+procedure DeclarePlayers();
+begin
+  with Players.new()^ do
+  begin
+    LoginName := Name;
+    Password := Pass;
+    IsMember := True;
+    IsActive := True;
+    World := 334;
+  end;
+end;
+
+function TRSInventory.FindItems(Item: TItem): TIntegerArray; overload;
+var
+  i: Integer;
+begin
+  for i := Self.LowSlot to Self.HighSlot do
+    if Self.SlotIsUsed(i) then
+      if (CountColor(65536, Self.GetSlotBox(i)) = Item.Count) and SimilarColors(GetColor(Inventory.GetSlotBox(i).Middle), Item.MiddleCol, Item.Tolerance) then
+      begin
+        Result += i;
+      end;
+end;
+
+function TRSInventory.FindItem(Item: TItem): Int32; overload;
+var
+  a: TIntegerArray;
+begin
+  Result := -1;
+  a := Self.FindItems(Item);
+  if (Length(a) > 0) then
+    Result := a[0];
+end;
+
+function TRSInventory.ActivateSlot(Slot: Int32; DeSelect, ActivateCheck: Boolean): Boolean; overload;
+var
+  T: UInt64;
+  S: Int32;
+begin
+  if not Self.SlotIsVaild(Slot) then
+    Exit(False);
+  if DeSelect and (Self.GetActiveSlot <> -1) then
+  begin
+    S := Self.GetActiveSlot;
+    if S = Slot then
+      Exit(True);
+    Self.MouseSlot(S, mouse_Left);
+  end;
+  begin
+    if Self.GetActiveSlot = Slot then
+      Exit(True);
+    Self.MouseSlot(Slot, mouse_Left);
+    T := GetTickCount64() + srl.NormalRange(1200, 1800);
+    if not ActivateCheck then
+      Exit(True);
+    repeat
+      if (Result := Self.GetActiveSlot = Slot) then
+        Break;
+      srl.NormalWait(25, 50);
+    until (GetTickCount64 > T);
+  end;
+end;
+
+function TColorEx.FindAll(Area: TBox; var ATPA: T2DPointArray): Boolean;
+var
+  TPA: TPointArray;
+begin
+  FindColorsTolerance(TPA, Self.Color, Area, Self.Tolerance, Self.Settings);
+  ATPA := ClusterTPAEx(TPA, 3, 3);
+  FilterTPAsBetween(ATPA, 0, 50);
+  SortATPASize(ATPA, True);
+  if (length(ATPA) < 1) then
+    Exit(False);
+  Result := True;
+end;
+
+function TColorEx.FindColorTol(Area: TBox; var TPA: TPointArray): Boolean;
+begin
+  Result := FindColorsTolerance(TPA, Self.Color, Area, Self.Tolerance, Self.Settings);
+end;
+
+procedure TPlayerArray.ScriptKill(Reason: String);
+begin
+  BankScreen.Close();
+  WriteLn(Reason);
+  ShowBalloonHint('Simba', 'Script "SRL-Fletcher" has terminated because' + #10 + Reason, 3000, bfError);
+  Players.GetCurrent()^.IsActive := False;
+  Logout.ClickLogout();
+  if (Players.GetActive() < 1) then
+    TerminateScript;
+  Players.Next;
+end;
+
+function SelectItems(): Boolean;
+begin
+  if not Inventory.ActivateSlot(Inventory.FindItem(Knife)) then
+    Exit(False);
+  if not Inventory.ActivateSlot(Inventory.FindItem(Log)) then
+    Exit(False);
+  if srl.WaitMinColorCount(128, 5, IntToBox(155, 365, 362, 370), 10, srl.NormalRange(2000, 3000)) then
+    Exit(True);
+end;
+
+function Fletching(): Variant;
+var
+  T: UInt64;
+  Cooking: Boolean;
+  L, I: Integer;
+begin
+  Inventory.Open;
+  if not (CountColor(128, IntToBox(155, 365, 362, 370)) > 10) or (CountColor(0, 211, 392, 307, 411) > 10) then
+    if not SelectItems then
+      Exit(False);
+  if not (CountColor(0, 211, 392, 307, 411) > 10) then
+  begin
+    Mouse.Click(IntToBox(220, 380, 300, 430), mouse_Right);
+    if not ChooseOption.Select(['Make X', 'e X', 'X']) then
+      Exit(False);
+  end;
+  if not srl.WaitMinColorCount(8388608, 5, IntToBox(240, 415, 270, 440), 10, srl.NormalRange(2000, 4000)) then
+    Exit(False);
+  Keyboard.Send(IntToStr(67), 13);
+  L := Length(Inventory.FindItems(Log));
+  T := GetTickCount64() + RandomRange(8000, 12000);
+  repeat
+    if not srl.isLoggedIn then
+      Exit;
+    if ChatBox.HandleLevelUp then
+      Break;
+    if (Length(Inventory.FindItems(Log)) < L) then
+    begin
+      L := Length(Inventory.FindItems(Log));
+      T := GetTickCount64() + RandomRange(8000, 12000);
+    end;
+    if (L < 1) then
+      Break;
+    srl.NormalWait(400, 800);
+  until (GetTickCount64 > T);
+end;
+
+function Banking(): Variant;
+var
+  I: Integer;
+begin
+  if (not srl.isLoggedIn) then
+    Exit;
+  for I := 0 to 3 do
+  begin
+    if BankScreen.IsOpen then
+      Break;
+    if BankScreen.Open(CHEST_CW) then
+      Break;
+    if I = 3 then
+      Players.ScriptKill('Couldnt find the bank :(');
+  end;
+  BankScreen.DepositItem(1, True);
+  if not BankScreen.Withdraw(BankSlot, -1, Log.BankText) then
+    Players.ScriptKill('Cannot find any ' + ToStr(LogToFletch) + 'logs');
+  BankScreen.Close();
+  srl.WaitTypeFunc(@Inventory.IsFull, 40, 4000);
+end;
+
+function GetState(): function: Variant;
+begin
+  if not srl.isLoggedIn() then
+    Exit;
+  case (Inventory.FindItem(Log) <> -1) of
+    True: Exit(@Fletching);
+    False: Exit(@Banking);
+  end;
+end;
+
+procedure Execute();
+var
+  State: function: Variant;
+begin
+  if not (srl.isLoggedIn()) then
+  begin
+    if Players.GetCurrent()^.Login then
+      MainScreen.SetAngle(True);
+  end;
+  State := GetState;
+  WriteLn(@State);
+  State;
+end;
+
+begin
+  DeclarePlayers();
+  srl.Setup();
+  Mouse.SetSpeed(40);
+  LoadVars();
+  AddOnTerminate('FreeVars');
+  while (Players.GetActive() > 0) do
+    Execute();
+end.
