@@ -8,31 +8,32 @@ type
   EItem = (Maple, doStringing, doFletching);
   TItem = record
     MiddleCol, Count, Tolerance: Int32;
-    BankText: TStringArray;
+    UpText: TStringArray;
+    Offset: TPoint;
   end;
 const
-  Name = '';
-  Pass = '';
-  LogToFletch = doStringing;
-  BowToString = Maple;
-  BankSlot = 7;
+  LogToFletch = Maple;
+  BowToString = doFletching;
+  BankSlot = 27;
 
 var
-  Knife, Log, Bow: TItem;
+  repeats: Int32;
+  lastState: String;
+  knife, log, bow: TItem;
 
 procedure LoadVars();
 begin
-  Knife := [7040117, 60, 20, ['']];
+  knife := [7040117, 60, 20, ['']];
   case LogToFletch of
     Maple:
       begin
-        Log := [607848, 85, 20, ['']];
+        log := [607848, 85, 20, ['']];
       end;
   end;
   case BowToString of
     Maple:
       begin
-        Bow := [65536, 133, 20, ['']];
+        bow := [65536, 133, 20, ['']];
       end;
 
   end;
@@ -40,13 +41,13 @@ end;
 
 procedure DeclarePlayers();
 begin
-  with Players.new()^ do
+  with Players.New()^ do
   begin
-    LoginName := Name;
-    Password := Pass;
+    LoginName := '';
+    Password := '';
     IsMember := True;
     IsActive := True;
-    World := 334;
+    World := 0;
   end;
 end;
 
@@ -55,7 +56,7 @@ var
   i: Integer;
 begin
   for i := Self.LowSlot to Self.HighSlot do
-    if Self.SlotIsUsed(i) then
+    if Self.IsSlotUsed(i) then
       if (CountColor(65536, Self.GetSlotBox(i)) = Item.Count) and SimilarColors(GetColor(Inventory.GetSlotBox(i).Middle), Item.MiddleCol, Item.Tolerance) then
       begin
         Result += i;
@@ -74,30 +75,30 @@ end;
 
 function TRSInventory.ActivateSlot(Slot: Int32; DeSelect, ActivateCheck: Boolean): Boolean; overload;
 var
-  T: UInt64;
-  S: Int32;
+  t: UInt64;
+  s: Int8;
 begin
-  if not Self.SlotIsVaild(Slot) then
+  if not Self.IsSlotValid(Slot) then
     Exit(False);
   if DeSelect and (Self.GetActiveSlot <> -1) then
   begin
-    S := Self.GetActiveSlot;
-    if S = Slot then
+    s := Self.GetActiveSlot;
+    if s = Slot then
       Exit(True);
-    Self.MouseSlot(S, mouse_Left);
+    Self.MouseSlot(s, mouse_Left);
   end;
   begin
     if Self.GetActiveSlot = Slot then
       Exit(True);
     Self.MouseSlot(Slot, mouse_Left);
-    T := GetTickCount64() + srl.NormalRange(1200, 1800);
+    t := GetTickCount64() + srl.NormalRange(1200, 1800);
     if not ActivateCheck then
       Exit(True);
     repeat
       if (Result := Self.GetActiveSlot = Slot) then
         Break;
       srl.NormalWait(25, 50);
-    until (GetTickCount64 > T);
+    until (GetTickCount64 > t);
   end;
 end;
 
@@ -133,19 +134,44 @@ end;
 
 function SelectItems(): Boolean;
 begin
-  if not Inventory.ActivateSlot(Inventory.FindItem(Knife)) then
+  if not Inventory.ActivateSlot(Inventory.FindItem(knife), True, True) then
     Exit(False);
-  if not Inventory.ActivateSlot(Inventory.FindItem(Log)) then
+  if not Inventory.ActivateSlot(Inventory.FindItem(log), False, False) then
     Exit(False);
   if srl.WaitMinColorCount(128, 5, IntToBox(155, 365, 362, 370), 10, srl.NormalRange(2000, 3000)) then
     Exit(True);
 end;
 
+procedure AntiBan();
+var
+  i: Integer;
+begin
+  i := Random(400);
+  case i of
+    0..100:
+      begin
+        MouseMovingObject();
+      end;
+    101..150:
+      begin
+        srl.NormalWait(1000, 2500);
+      end;
+    151..400:
+      begin
+        MouseOffClient(0);
+        if (Random(800) = 50) then
+          srl.NormalWait(100000, 100000 * 3)
+        else
+          srl.NormalWait(4000, 8000);
+      end;
+  end;
+end;
+
 function Fletching(): Variant;
 var
-  T: UInt64;
-  Cooking: Boolean;
-  L, I: Integer;
+  t: UInt64;
+  Fletching: Boolean;
+  L, i: Integer;
 begin
   Inventory.Open;
   if not (CountColor(128, IntToBox(155, 365, 362, 370)) > 10) or (CountColor(0, 211, 392, 307, 411) > 10) then
@@ -160,41 +186,41 @@ begin
   if not srl.WaitMinColorCount(8388608, 5, IntToBox(240, 415, 270, 440), 10, srl.NormalRange(2000, 4000)) then
     Exit(False);
   Keyboard.Send(IntToStr(67), 13);
-  L := Length(Inventory.FindItems(Log));
-  T := GetTickCount64() + RandomRange(8000, 12000);
+  L := Length(Inventory.FindItems(log));
+  t := GetTickCount64() + RandomRange(8000, 12000);
   repeat
     if not srl.isLoggedIn then
       Exit;
     if ChatBox.HandleLevelUp then
       Break;
-    if (Length(Inventory.FindItems(Log)) < L) then
+    if (Length(Inventory.FindItems(log)) < L) then
     begin
-      L := Length(Inventory.FindItems(Log));
-      T := GetTickCount64() + RandomRange(8000, 12000);
+      L := Length(Inventory.FindItems(log));
+      t := GetTickCount64() + RandomRange(8000, 12000);
     end;
     if (L < 1) then
       Break;
-    srl.NormalWait(400, 800);
-  until (GetTickCount64 > T);
+    AntiBan();
+  until (GetTickCount64 > t);
 end;
 
 function Banking(): Variant;
 var
-  I: Integer;
+  i: Integer;
 begin
   if (not srl.isLoggedIn) then
     Exit;
-  for I := 0 to 3 do
+  for i := 0 to 3 do
   begin
     if BankScreen.IsOpen then
       Break;
-    if BankScreen.Open(CHEST_CW) then
+    if BankScreen.Open(CHEST_RFD) then
       Break;
-    if I = 3 then
+    if i = 3 then
       Players.ScriptKill('Couldnt find the bank :(');
   end;
   BankScreen.DepositItem(1, True);
-  if not BankScreen.Withdraw(BankSlot, -1, Log.BankText) then
+  if not BankScreen.Withdraw(BankSlot, -1, log.UpText) then
     Players.ScriptKill('Cannot find any ' + ToStr(LogToFletch) + 'logs');
   BankScreen.Close();
   srl.WaitTypeFunc(@Inventory.IsFull, 40, 4000);
@@ -204,7 +230,7 @@ function GetState(): function: Variant;
 begin
   if not srl.isLoggedIn() then
     Exit;
-  case (Inventory.FindItem(Log) <> -1) of
+  case (Inventory.FindItem(log) <> -1) of
     True: Exit(@Fletching);
     False: Exit(@Banking);
   end;
@@ -212,6 +238,7 @@ end;
 
 procedure Execute();
 var
+  stateStr: String;
   State: function: Variant;
 begin
   if not (srl.isLoggedIn()) then
@@ -220,8 +247,16 @@ begin
       MainScreen.SetAngle(True);
   end;
   State := GetState;
-  WriteLn(@State);
+  stateStr := Between('"', '"', ToStr(@State));
+  WriteLn(stateStr);
   State;
+  if lastState = stateStr then
+    Inc(repeats)
+  else
+    repeats := 0;
+  if (repeats > 10) then
+    Players.ScriptKill('Too many repeats');
+  lastState := stateStr;
 end;
 
 begin
@@ -229,7 +264,7 @@ begin
   srl.Setup();
   Mouse.SetSpeed(40);
   LoadVars();
-  AddOnTerminate('FreeVars');
+
   while (Players.GetActive() > 0) do
     Execute();
 end.
