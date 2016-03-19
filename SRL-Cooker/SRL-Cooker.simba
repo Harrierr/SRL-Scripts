@@ -1,0 +1,284 @@
+program Cooker;
+
+{$DEFINE SMART}
+{$i SRL/OSR.simba}
+{$I ../scripts/SRl-MiniInclude.simba}
+
+type
+  TItem = record
+    MiddleCol, Count, Tolerance: Int32;
+    UpText, InteractionText: TStringArray;
+    Offset: TPoint;
+  end;
+
+var
+  lastState: String;
+  repeats: Byte;
+  raw, cooked: TItem;
+  flames, logs, chair: TColorEx;
+
+procedure DeclarePlayers();
+begin
+  with Players.new()^ do
+  begin
+    LoginName := '';
+    Password := '';
+    IsMember := True;
+    IsActive := True;
+    Variants[0] := '';
+    Variants[1] := 10;
+    World := 334;
+  end;
+end;
+
+procedure LoadVars();
+begin
+  case LowerCase(VarToStrDef(Players.GetCurrent^.Variants[0], '')) of
+    'lobster':
+      begin
+        raw := [1785193, 110, 20, ['Lobster', 'obster'], ['obster -> Fire', 'Lobster -> Fire']];
+        cooked := [1201311, 110, 20, [], []];
+      end;
+    'shark':
+      begin
+
+
+      end;
+    else
+      srl.WriteLn('You did not input what to cook correctly', dtFatal);
+  end;
+  flames := [3449820, 13, [2, [0.17, 1.72]]];
+  logs := [12348, 2, [2, [0.18, 0.00]]];
+  chair := [863552, 6, [2, [0.08, 1.23]]];
+end;
+
+
+function TRSInventory.FindItems(Item: TItem): TIntegerArray; overload;
+var
+  i: Integer;
+begin
+  for i := Self.LowSlot to Self.HighSlot do
+    if Self.IsSlotUsed(i) then
+      if (CountColor(65536, Self.GetSlotBox(i)) = Item.Count) and SimilarColors(GetColor(Inventory.GetSlotBox(i).Middle), Item.MiddleCol, Item.Tolerance) then
+      begin
+        Result += i;
+      end;
+end;
+
+function TRSInventory.FindItem(Item: TItem): Int32; overload;
+var
+  a: TIntegerArray;
+begin
+  Result := -1;
+  a := Self.FindItems(Item);
+  if (Length(a) > 0) then
+    Result := a[0];
+end;
+
+function TRSInventory.ActivateSlot(Slot: Int32; DeSelect, ActivateCheck: Boolean): Boolean; overload;
+var
+  t: UInt64;
+  s: Int32;
+begin
+  if not Self.IsSlotValid(Slot) then
+    Exit(False);
+  if DeSelect and (Self.GetActiveSlot <> -1) then
+  begin
+    s := Self.GetActiveSlot;
+    if s = Slot then
+      Exit(True);
+    Self.MouseSlot(s, mouse_Left);
+  end;
+  begin
+    if Self.GetActiveSlot = Slot then
+      Exit(True);
+    Self.MouseSlot(Slot, mouse_Left);
+    t := GetTickCount64() + srl.NormalRange(1200, 1800);
+    if not ActivateCheck then
+      Exit(True);
+    repeat
+      if (Result := Self.GetActiveSlot = Slot) then
+        Break;
+      srl.NormalWait(25, 50);
+    until (GetTickCount64 > t);
+  end;
+end;
+
+function TColorEx.FindAll(Area: TBox; var ATPA: T2DPointArray): Boolean;
+var
+  TPA: TPointArray;
+begin
+  FindColorsTolerance(TPA, Self.Color, Area, Self.Tolerance, Self.Settings);
+  ATPA := ClusterTPAEx(TPA, 3, 3);
+  FilterTPAsBetween(ATPA, 0, 50);
+  SortATPASize(ATPA, True);
+  if (length(ATPA) < 1) then
+    Exit(False);
+  Result := True;
+end;
+
+function TColorEx.FindColorTol(Area: TBox; var TPA: TPointArray): Boolean;
+begin
+  Result := FindColorsTolerance(TPA, Self.Color, Area, Self.Tolerance, Self.Settings);
+end;
+
+procedure TPlayerArray.Next(Reason: String); overload;
+begin
+  BankScreen.Close();
+  WriteLn(Reason);
+  ShowBalloonHint('Simba', 'Script "SRL-RougeCooker" has terminated because' + #10 + Reason, 3000, bfError);
+  Players.GetCurrent()^.IsActive := False;
+  Logout.ClickLogout();
+  if (Players.GetActive() < 1) then
+    TerminateScript;
+  Players.Next;
+end;
+
+function InteractFire(): Boolean;
+var
+  b: TBox;
+  i: Int32;
+  TPA, TPA1: TPointArray;
+  ATPA, ATPA2: T2DPointArray;
+begin
+
+  chair.FindColorTol(MainScreen.FBounds, TPA);
+  ATPA := ClusterTPA(TPA, 3);
+  FilterTPAsBetween(ATPA, 0, 200);
+  for i := Low(ATPA) to High(ATPA) do
+  begin
+    b := GetTPABounds(ATPA[i]);
+    if not InRange(b.Height, 10, 40) and InRange(b.Width, 10, 40) then
+      Continue;
+    ATPA2 += ATPA[i];
+  end;
+  b := GetATPABounds(ATPA2);
+  flames.FindColorTol(b, TPA);
+  logs.FindColorTol(b, TPA1);
+  TPA1 := TPAOverLap(TPA1, TPA, 20);
+  SetLength(ATPA, 0);
+  ATPA := ClusterTPAEx(TPA1, 5, 5);
+  FilterTPAsBetween(ATPA, 0, 20);
+  SortATPAFromMidPoint(ATPA, MainScreen.getMiddle());
+  if (Length(ATPA) < 1) then
+    Players.Next('Someones standing on the fire/cannot find it');
+  for i := 0 to High(ATPA) do
+  begin
+    Mouse.Move(MedianTPA(ATPA[i]), ATPA[i].GetRadius);
+    if MainScreen.IsUpText(raw.InteractionText, srl.NormalRange(100, 200)) then
+    begin
+      if Mouse.Click(ctRed) then
+        Break;
+    end else
+    begin
+      Mouse.Click(mouse_Right);
+      if ChooseOption.Select(raw.InteractionText) then
+        Break;
+    end;
+  end;
+  Result := srl.WaitMinColorCount(128, 0, [155, 365, 362, 370], 10, srl.NormalRange(2000, 3000));
+
+end;
+
+function Cooking(): Variant;
+var
+  t: UInt64;
+  Cooking: Boolean;
+  L, i: Integer;
+
+begin
+  Inventory.Open;
+  if not (CountColor(128, IntToBox(155, 365, 362, 370)) > 10) then
+  begin
+    if not Inventory.ActivateSlot(Inventory.FindItem(raw), True, True) then
+      Exit(False);
+    if not InteractFire then
+      Exit(False);
+  end;
+  Mouse.Click(IntToBox(220, 380, 300, 430), mouse_Right);
+  if not ChooseOption.Select(['Cook All', 'ook All']) then
+    Exit(False);
+  L := Length(Inventory.FindItems(raw));
+  t := GetTickCount64() + RandomRange(8000, 12000);
+
+  repeat
+    if not srl.isLoggedIn() then
+      Exit;
+    if ChatBox.HandleLevelUp then
+      Break;
+    if (Length(Inventory.FindItems(raw)) < L) then
+    begin
+      L := Length(Inventory.FindItems(raw));
+      t := GetTickCount64() + RandomRange(8000, 12000);
+    end;
+    if (L < 1) then
+      Break;
+    srl.NormalWait(420, 696);
+  until (GetTickCount64 > t);
+end;
+
+function Banking(): Variant;
+var
+  i: Integer;
+begin
+  if (not srl.isLoggedIn) then
+    Exit;
+  for i := 0 to 3 do
+  begin
+    if BankScreen.IsOpen then
+      Break;
+    if BankScreen.Open(Emerald_Benedict) then
+      Break;
+    if i = 3 then
+      Players.Next('Couldnt find the bank :(');
+  end;
+  BankScreen.DepositAll;
+  BankScreen.Withdraw(Players.GetCurrent^.Variants[1], -1, raw.UpText);
+  BankScreen.Close();
+  srl.WaitTypeFunc(@Inventory.IsFull, 40, 4000);
+end;
+
+function GetState(): function: Variant;
+begin
+  if not srl.isLoggedIn() then
+    Exit;
+  case (Inventory.FindItem(raw) <> -1) of
+    True: Exit(@Cooking);
+    False: Exit(@Banking);
+  end;
+end;
+
+procedure Execute();
+var
+  stateStr: String;
+  State: function: Variant;
+begin
+  if not (srl.isLoggedIn()) then
+  begin
+    if Players.GetCurrent()^.Login then
+      MainScreen.SetAngle(True);
+  end;
+  State := GetState;
+  stateStr := Between('"', '"', ToStr(@State));
+  WriteLn(stateStr);
+  State;
+  if lastState = stateStr then
+  Inc(repeats)
+  else
+  repeats := 0;
+  if (repeats > 10) then
+    Players.Next('Too many repeats');
+  lastState := StateStr;
+
+end;
+
+begin
+  DeclarePlayers();
+  srl.Setup();
+  Mouse.SetSpeed(40);
+  LoadVars();
+  AddOnTerminate('FreeVars');
+  while (Players.GetActive() > 0) do
+    Execute();
+
+end.
